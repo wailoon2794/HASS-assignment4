@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { margin: 0 }
+    
+    #map {
+    width: 100vw;
+    height: 100vh;
+    }
+
+    .district {
+        fill: none;
+        stroke: red;
+        stroke-width: 2px;
+    }
+  </style>
+  <h1 style="text-align: center;">Choropleth Map of Singapore's Population</h1>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+</head>
+
+<body>
+<button onclick = "draw_male()">Male</button>
+<button onclick = "draw_female()">Female</button>
+<div id="map"></div>
+<div class="tooltip"></div>
+<div id="legend" style="display: inline-block"></div>
+<script src="https://d3js.org/d3.v6.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+                    
+<script>
+let tiles = new L.tileLayer('https://maps-{s}.onemap.sg/v3/Default/{z}/{x}/{y}.png', {
+  detectRetina: true,
+  maxZoom: 18,
+  minZoom: 11,
+  //Do not remove this attribution
+  attribution: '<img src="https://docs.onemap.sg/maps/images/oneMap64-01.png" style="height:20px;width:20px;">' +
+               'New OneMap | Map data © contributors, <a href="http://SLA.gov.sg">Singapore Land Authority</a>'
+});
+
+let map = new L.Map("map", {
+    center: [1.347833, 103.809357],
+    zoom: 11,
+    maxBounds: L.latLngBounds(L.latLng(1.1, 103.5), L.latLng(1.5, 104.3))
+    })
+    .addLayer(tiles);
+
+let svg = d3.select(map.getPanes().overlayPane)
+    .append("svg")
+    .attr("width", window.innerWidth)
+    .attr("height", window.innerHeight)
+        .append("g")
+        .attr("id","svgLayer")
+        .attr("class", "leaflet-zoom-hide"); 
+
+ function projectPoint(x, y) {
+  var point = map.latLngToLayerPoint(new L.LatLng(y, x));
+  this.stream.point(point.x, point.y);
+}
+
+let projection = d3.geoTransform({point: projectPoint});
+let geopath = d3.geoPath().projection(projection);
+
+//run svg file first for base layer
+runsvg();
+
+//check if male or female
+var check = 0;
+
+
+function draw_male() {
+  check = 1;
+  console.log(check);
+  runsvg();
+  
+}
+
+function draw_female() {
+  check = 2;
+  runsvg();
+}
+
+
+//encapsulate this entire thing within a function if not it wouldn't work
+
+function runsvg() {
+
+  //remove all svg if any if not it'd overlay 
+  svg.selectAll("*").remove();
+
+
+  // Load external data and boot
+Promise.all([d3.json("sg_geo.json"), d3.csv("population2020.csv")]).then(data => {
+
+var population2020 = data[1];
+var sg_geo = data[0];
+
+
+// loop to add the population value into the array of sg_geo
+for(i=0; i<population2020.length; i++){
+            // grab subzone name
+            var dataSubz = population2020[i].Subzone;
+            //console.log(dataSubz)
+
+            //grab data value, and convert from string to float
+            var dataValue = parseFloat(population2020[i].PopMale);
+            var dataValue2 = parseFloat(population2020[i].PopFemale);
+            //console.log(dataValue)
+
+            //find the corresponding state inside the GeoJSON
+            for(var n = 0; n < sg_geo.features.length; n++){
+
+                // properties name gets the states name
+                var jsonSubz = sg_geo.features[n].properties.Name;
+                //console.log(jsonSubz)
+
+                // if statement to merge by name of state
+                if(dataSubz == jsonSubz){
+                    //Copy the data value into the JSON
+                    // basically creating a new value column in JSON data
+                    sg_geo.features[n].properties.mvalue = dataValue;
+                    sg_geo.features[n].properties.fvalue = dataValue2;
+                    //console.log(sg_geo.features[n].properties.fvalue)
+                    //stop looking through the JSON
+                    break;
+                }
+            }
+    }
+
+
+let width = 1000, height = 600;
+var legendRectSize = 18;                                
+var legendSpacing = 4;  
+
+var colorScale = d3.scaleThreshold()
+    .domain([0, 1000, 2500, 5000, 10000, 15000, 25000])
+    .range(d3.schemeBlues[7]);
+
+var colorScale2 = d3.scaleThreshold()
+        .domain([0, 1000, 2500, 5000, 10000, 15000, 25000])
+        .range(d3.schemeReds[7]);
+
+
+if (check==1) {
+  //console.log(check);
+//run draw_malepopulation
+draw_malepopulation();
+}
+
+else if (check==2) {
+  draw_femalepopulation();
+}
+else {
+  draw_malepopulation();
+}
+    
+function draw_malepopulation() {
+    svg.append("g")
+    .attr("id", "districts")
+    .selectAll("path")
+    .data(sg_geo.features)
+    .enter()
+    .append("path")
+    .attr("d", geopath)
+    .classed("leaflet-interactive", true)
+    .attr("fill", d=> {return colorScale(d.properties.mvalue);})
+    .attr("stroke", "grey")
+    .on("mouseover", (event, d) => {
+        d3.select(".tooltip")
+        .text(d.properties.Name +": "+ d.properties.mvalue)
+        .style("position", "absolute")
+        .style("background", "#fff")
+        .style("left", (event.pageX + 15) + "px")
+        .style("top", (event.pageY + 15) + "px")
+        .style("z-index", "1000");
+        d3.select(event.currentTarget)
+            .attr("opacity", 0);
+        })
+    .on("mouseout", (event, d) => {
+        d3.select(".tooltip")
+        .text("");
+        d3.select(svg.selectAll("path")
+        .attr("opacity", 1));
+        d3.select(event.currentTarget)
+    });
+
+
+    var legendRectSize = 9;
+    var legendSpacing = 4;
+
+    var legend = svg.selectAll('.legend')
+        .data(colorScale.domain())
+        .enter()
+        .append('g')
+        .attr('class', 'legend')
+        .attr('transform', function(d, i) {  
+            var height = (legendRectSize + legendSpacing) + 10;  
+            var offset =  height * colorScale.domain().length / 2;  
+            var horz = (-2 * legendRectSize) + 950;  
+            var vert = (i * height - offset) + 450;  
+            return 'translate(' + horz + ',' + vert + ')'; 
+          });
+
+        legend.append('rect') 
+          .attr('width', legendRectSize) 
+          .attr('height', legendRectSize)
+          .style('fill', colorScale) 
+          .style('stroke', colorScale);
+          
+        legend.append('text')  
+          .attr('x', legendRectSize + legendSpacing) 
+          .attr('y', legendRectSize - legendSpacing) 
+          .text(function(d) { return d; }); 
+        }   
+
+function draw_femalepopulation() {
+    svg.append("g")
+    .attr("id", "districts")
+    .selectAll("path")
+    .data(sg_geo.features)
+    .enter()
+    .append("path")
+    .attr("d", geopath)
+    .classed("leaflet-interactive", true)
+    .attr("fill", d=> {return colorScale2(d.properties.fvalue);})
+    .attr("stroke", "grey")
+    .on("mouseover", (event, d) => {
+        d3.select(".tooltip")
+        .text(d.properties.Name +": "+ d.properties.fvalue)
+        .style("position", "absolute")
+        .style("background", "#fff")
+        .style("left", (event.pageX + 15) + "px")
+        .style("top", (event.pageY + 15) + "px")
+        .style("z-index", "1000");
+        d3.select(event.currentTarget)
+            .attr("opacity", 0);
+        })
+    .on("mouseout", (event, d) => {
+        d3.select(".tooltip")
+        .text("");
+        d3.select(svg.selectAll("path")
+        .attr("opacity", 1));
+        d3.select(event.currentTarget)
+    });
+
+
+    var legendRectSize = 9;
+    var legendSpacing = 4;
+
+    var legend = svg.selectAll('.legend')
+        .data(colorScale2.domain())
+        .enter()
+        .append('g')
+        .attr('class', 'legend')
+        .attr('transform', function(d, i) {  
+            var height = (legendRectSize + legendSpacing) + 10;  
+            var offset =  height * colorScale2.domain().length / 2;  
+            var horz = (-2 * legendRectSize) + 950;  
+            var vert = (i * height - offset) + 450;  
+            return 'translate(' + horz + ',' + vert + ')'; 
+          });
+
+        legend.append('rect') 
+          .attr('width', legendRectSize) 
+          .attr('height', legendRectSize)
+          .style('fill', colorScale2) 
+          .style('stroke', colorScale2);
+          
+        legend.append('text')  
+          .attr('x', legendRectSize + legendSpacing) 
+          .attr('y', legendRectSize - legendSpacing) 
+          .text(function(d) { return d; }); 
+        }   
+
+
+map.on('zoomend', onZoom);
+
+function onZoom() {
+    var bounds = geopath.bounds(sg_geo),
+        topLeft = bounds[0],
+        bottomRight = bounds[1];
+
+    var svg = d3.select(map.getPanes().overlayPane).select("svg");
+        
+    svg.attr("width", bottomRight[0] - topLeft[0])
+       .attr("height", bottomRight[1] - topLeft[1])
+       .style("left", topLeft[0] + "px")
+       .style("top", topLeft[1] + "px");
+       
+    svg.select("g").attr("transform", "translate(" + -topLeft[0] + "," + -topLeft[1] + ")");
+    d3.select("g#districts").selectAll("path")
+       .attr("d", geopath);
+}
+
+})
+}
+</script>
+
+</body>
+</html>
